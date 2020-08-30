@@ -40,7 +40,7 @@ if [ "$DIST" = "Ubuntu" ] || [ "$DIST" = "Debian" ]; then
     install='sudo apt-get -y install'
     remove='sudo apt-get -y remove'
     pkginst='sudo dpkg -i'
-    update='sudo apt-get'
+    update='sudo apt-get update'
     # Prereqs for this script
     if ! which lsb_release &> /dev/null; then
         $install lsb-release
@@ -51,10 +51,21 @@ if [ "$DIST" = "Fedora" ]; then
     install='sudo yum -y install'
     remove='sudo yum -y erase'
     pkginst='sudo rpm -ivh'
-    update='sudo yum'
+    update='sudo yum update'
     # Prereqs for this script
     if ! which lsb_release &> /dev/null; then
         $install redhat-lsb-core
+    fi
+fi
+test -e /etc/arch-release && DIST="Arch"
+if [ "$DIST" = "Arch" ]; then
+    install='sudo pacman --noconfirm  -S'
+    remove='sudo pacman --noconfirm -R'
+    pkginst='sudo pacman --noconfirm -U '
+    update='sudo pacman --noconfirm -Sy'
+    # Prereqs for this script
+    if ! which lsb_release &> /dev/null; then
+        $install lsb-release
     fi
 fi
 if which lsb_release &> /dev/null; then
@@ -69,7 +80,7 @@ echo "Detected Linux distribution: $DIST $RELEASE $CODENAME $ARCH"
 KERNEL_NAME=`uname -r`
 KERNEL_HEADERS=kernel-headers-${KERNEL_NAME}
 
-if ! echo $DIST | egrep 'Ubuntu|Debian|Fedora'; then
+if ! echo $DIST | egrep 'Ubuntu|Debian|Fedora|Arch'; then
     echo "Install.sh currently only supports Ubuntu, Debian and Fedora."
     exit 1
 fi
@@ -123,7 +134,7 @@ OF13_SWITCH_REV=${OF13_SWITCH_REV:-""}
 
 function kernel {
     echo "Install Mininet-compatible kernel if necessary"
-    $update update
+    $update
     if ! $install linux-image-$KERNEL_NAME; then
         echo "Could not install linux-image-$KERNEL_NAME"
         echo "Skipping - assuming installed kernel is OK."
@@ -154,6 +165,9 @@ function mn_deps {
 			iproute telnet ${PYPKG}-setuptools libcgroup-tools \
 			ethtool help2man python-pyflakes python3-pylint \
                         python-pep8 ${PYPKG}-pexpect ${PYPKG}-tk
+    elif [ "$DIST" == "Arch" ]; then
+        $install gcc make socat psmisc xterm openssh inetutils iperf ethtool help2man
+        $PYTHON -m pip install pyflakes pylint pep8 tk pexpect setuptools
     else  # Debian/Ubuntu
         $install gcc make socat psmisc xterm ssh iperf telnet \
                  ethtool help2man pyflakes pylint pep8 \
@@ -197,9 +211,17 @@ function p4_deps {
 # Install Mininet-WiFi deps
 function wifi_deps {
     echo "Installing Mininet-WiFi dependencies"
-    $install wireless-tools rfkill ${PYPKG}-numpy pkg-config \
+    if [ $DIST == "Arch" ]
+    then
+        set -x
+        $install wireless_tools libnl openssl libevent dbus rfkill pkg-config make patch
+        $PYTHON -m pip install numpy psutil
+        set +x
+    else
+        $install wireless-tools rfkill ${PYPKG}-numpy pkg-config \
              libnl-3-dev libnl-genl-3-dev libssl-dev make libevent-dev patch \
              libdbus-1-dev python-psutil python3-psutil
+    fi
 
     if [ "$DIST" = "Ubuntu" ] && [ "$RELEASE" = "20.04" ]; then
         $install python3-pip
@@ -212,7 +234,12 @@ function wifi_deps {
         sudo pip install matplotlib==2.1.1 --ignore-installed six
     else
         if [ "$PYTHON_VERSION" == 3 ]; then
+            if [ $DIST == "Arch" ]
+            then
+                $PYTHON -m pip install matplotlib
+            else
             $install python3-matplotlib
+            fi
         else
             sudo pip install --upgrade pip
             sudo pip install matplotlib==2.1.1 --ignore-installed six
@@ -269,7 +296,7 @@ function babeld {
 function olsrd {
     echo "Installing olsrd..."
     $install bison flex
-    
+
     cd $BUILD_DIR/mininet-wifi
     if [ -d olsrd ]; then
           echo "Removing olsrd..."
@@ -337,6 +364,8 @@ function of {
     $install autoconf automake libtool make gcc patch
     if [ "$DIST" = "Fedora" ]; then
         $install git pkgconfig glibc-devel
+    elif [ "$DIST" == "Arch" ]; then
+        $install git pkgconfig glibc
     else
         $install git-core autotools-dev pkg-config libc6-dev
     fi
@@ -530,7 +559,12 @@ function ovs {
         fi
     fi
 
+    if [ $DIST == "Arch" ]
+    then
+        $install openvswitch
+    else
     $install openvswitch-switch
+    fi
     OVSC=""
     if $install openvswitch-controller; then
         OVSC="openvswitch-controller"
@@ -839,7 +873,12 @@ function wmediumd {
       echo "Removing wmediumd..."
       rm -r wmediumd
     fi
+    if [ "$DIST" == "Arch" ]
+    then
+        $install git make libevent libconfig libnl
+    else
     $install git make libevent-dev libconfig-dev libnl-3-dev libnl-genl-3-dev
+    fi
     git clone --depth=1 -b mininet-wifi https://github.com/ramonfontes/wmediumd.git
     pushd $BUILD_DIR/wmediumd
     sudo make install
